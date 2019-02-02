@@ -1,0 +1,18 @@
+# Created by .ignore support plugin
+*.iml
+.project
+.settings/
+
+bin/*
+*.class
+*/target/*
+lib/*
+release/*
+
+# logs
+*.log
+.idea
+
+#DBSrv工程
+#DBSrv/*
+#Core/*
