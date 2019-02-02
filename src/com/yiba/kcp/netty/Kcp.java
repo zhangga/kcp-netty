@@ -98,6 +98,7 @@ public class Kcp {
      */
     public static final int IKCP_PROBE_LIMIT = 120000;
 
+    /** conv为一个表示会话编号的整数，和tcp的 conv一样，通信双方需保证 conv相同，相互的数据包才能够被认可 */
     private int conv;
 
     private int mtu = IKCP_MTU_DEF;	//单条消息最大长度
@@ -118,9 +119,9 @@ public class Kcp {
 
     private int ssthresh = IKCP_THRESH_INIT;
 
-    private int rxRttval;	//消息到达延迟，rtt/2
+    private int rxRttval;	//RTT的平均偏差，用来衡量RTT的抖动。消息到达延迟，rtt/2
 
-    private int rxSrtt;	//rtt消息往返延迟
+    private int rxSrtt;	//RTT的一个加权RTT平均值，平滑值。
 
     private int rxRto = IKCP_RTO_DEF;	//重传超时时间,消息平均延迟
 
@@ -243,19 +244,19 @@ public class Kcp {
 
         private final Recycler.Handle<Segment> recyclerHandle;
 
-        private int conv;
+        private int conv;	//连接号。UDP是无连接的，conv用于表示来自于哪个客户端。对连接的一种替代
 
-        private byte cmd;
+        private byte cmd;	//命令字。如，IKCP_CMD_ACK确认命令，IKCP_CMD_WASK接收窗口大小询问命令，IKCP_CMD_WINS接收窗口大小告知命令，
 
-        private short frg;	//同一个包中多个segment的编号fragment n->0
+        private short frg;	//分片，用户数据可能会被分成多个KCP包，发送出去。同一个包中多个segment的编号fragment n->0
 
-        private int wnd;	//发送窗口大小
+        private int wnd;	//接收窗口大小，发送方的发送窗口不能超过接收方给出的数值
 
-        private long ts;
+        private long ts;	//时间序列
 
-        private long sn;	//同一个消息多个segment 0->n
+        private long sn;	//序列号 0->n
 
-        private long una;	//所有消息增长的编号
+        private long una;	//下一个可接收的序列号。其实就是确认号，收到sn=10的包，una为11
 
         private long resendts;	//下次超时重发的时刻
 
@@ -922,6 +923,11 @@ public class Kcp {
         return 0;
     }
 
+    /**
+     * 收到一个下层数据包（比如UDP包）时需要调用
+     * @param data
+     * @return
+     */
     public int input(ByteBuf data) {
         long oldSndUna = sndUna;
         long maxack = 0;
@@ -1311,6 +1317,8 @@ public class Kcp {
     }
 
     /**
+     * 以一定频率调用 ikcp_update来更新 kcp状态，并且传入当前时钟（毫秒单位）
+     * 如 10ms调用一次，或用 ikcp_check确定下次调用 update的时间不必每次调用
      * update getState (call it repeatedly, every 10ms-100ms), or you can ask
      * ikcp_check when to call it again (without ikcp_input/_send calling).
      * 'current' - current timestamp in millisec.
